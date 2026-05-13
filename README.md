@@ -25,7 +25,7 @@ This project is derived from [leotomas/tmux-claude](https://github.com/leotomas/
 Add the plugin to `~/.tmux.conf`:
 
 ```bash
-set -g @plugin 'leotomas/tmux-codex'
+set -g @plugin 'hintzd/tmux-codex'
 ```
 
 Then press `prefix + I`.
@@ -35,7 +35,7 @@ Then press `prefix + I`.
 Clone the repository:
 
 ```bash
-git clone https://github.com/leotomas/tmux-codex.git ~/.tmux/plugins/tmux-codex
+git clone https://github.com/hintzd/tmux-codex.git ~/.tmux/plugins/tmux-codex
 ```
 
 Add to `~/.tmux.conf`:
