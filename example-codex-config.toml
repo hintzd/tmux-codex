@@ -1,0 +1,23 @@
+# Example Codex hook configuration for tmux-codex.
+# Merge these entries into ~/.codex/config.toml and replace the script path.
+# After saving the config, start Codex and run /hooks to trust both hook commands.
+
+[features]
+hooks = true
+
+[[hooks.Stop]]
+matcher = "*"
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "python3 /absolute/path/to/tmux-codex/scripts/codex_tmux_hooks.py stop"
+timeout = 30
+
+[[hooks.PermissionRequest]]
+matcher = "*"
+
+[[hooks.PermissionRequest.hooks]]
+type = "command"
+command = "python3 /absolute/path/to/tmux-codex/scripts/codex_tmux_hooks.py permission-request"
+timeout = 30
+statusMessage = "Updating tmux pane status"
