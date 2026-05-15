@@ -9,7 +9,7 @@ This project is derived from [hintzd/tmux-claude](https://github.com/hintzd/tmux
 - **🏃 Running Status**: Shows a runner after the latest prompt is submitted, while Codex is still handling it and has not yet finished or asked for approval
 - **✅ Stop Status**: Shows a checkmark when Codex finishes a turn
 - **❓ Approval Status**: Shows a question mark when Codex requests approval
-- **🤖 Session Picker Marker**: Prefixes `🤖` in tmux's native session picker when a session contains a pane running Codex, without renaming the actual tmux session
+- **🤖 Session Picker Marker**: Shows one `🤖` per AI agent pane in the session picker (`prefix + S`) — works across both tmux-codex and tmux-claude if both are installed, so a session with two Codex panes and one Claude pane shows `🤖🤖🤖`
 - **Multi-pane Support**: Each tmux pane keeps its own status
 - **Smart Restoration**: Restores the original window name on pane focus or Enter
 - **Pure Python**: Uses only Python 3 standard library
@@ -124,8 +124,7 @@ Run Codex inside any tmux pane.
 - When Codex finishes a turn, the window name becomes `✅ <original-name>`.
 - When Codex asks for approval, the window name becomes `❓ <original-name>`.
 - When you focus that pane or press Enter in it, the original window name is restored.
-- In tmux's native session picker (`prefix + s`), sessions that contain a Codex pane are shown as `🤖 <session-name>`.
-  This only changes the picker display. The actual tmux session name stays unchanged.
+- In the session picker (`prefix + S`), sessions show one `🤖` per AI agent pane — e.g. two Codex panes in a session shows `🤖🤖 <session-name>`. If [tmux-claude](https://github.com/hintzd/tmux-claude) is also installed, Claude panes in the same session count too. The actual tmux session name is never changed.
 
 If this is your first run after adding the hook config, use `/hooks` inside Codex and trust all three hook commands before expecting the status updates to appear.
 
@@ -154,8 +153,7 @@ Debugging:
 2. The script resolves the tmux pane from `TMUX_PANE`, with current-pane fallback for manual testing.
 3. The plugin prefixes the window name with `🏃`, `✅`, or `❓`.
    `🏃` means the turn is in progress, `❓` means approval is required, and `✅` means the request finished.
-4. The plugin overrides tmux's native `prefix + s` binding and refreshes a session-scoped marker before opening the picker, so session rows show `🤖 <session-name>` when that session contains a Codex pane.
-   This affects the picker display only and does not rename the tmux session itself.
+4. The plugin overrides `prefix + S` and refreshes session markers before opening the picker. Each AI agent pane in the session contributes one `🤖` to the count. If [tmux-claude](https://github.com/hintzd/tmux-claude) is also installed, its Claude panes count too — both plugins share a tracker at `~/.config/tmux/ai-pane-tracker.json`. Panes are auto-detected by process inspection, so the count is correct even before any hook has fired.
 5. The original name and prior `automatic-rename` value are saved in a state file.
 6. Focusing the pane or pressing Enter restores the original name and cleans up the state file.
 
@@ -173,6 +171,10 @@ tmux-codex/
 ├── example-codex-config.toml
 └── README.md
 ```
+
+## Using alongside tmux-claude
+
+If you also install [tmux-claude](https://github.com/hintzd/tmux-claude), the session picker `🤖` counts will aggregate across both plugins automatically. Both plugins write to the shared tracker at `~/.config/tmux/ai-pane-tracker.json`, which is created automatically on first use. No extra configuration is needed — install both plugins and load both in your `~/.tmux.conf`.
 
 ## Attribution
 
