@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-import subprocess
 import json
-import time
+import subprocess
 from pathlib import Path
 from typing import Dict, Optional, List
 from debug_logger import DebugLogger
+
+SHARED_TRACKER = Path.home() / '.config' / 'tmux' / 'ai-pane-tracker.json'
 
 class TmuxIntegration:
     def __init__(self):
@@ -29,33 +30,48 @@ class TmuxIntegration:
     def get_all_panes(self) -> List[Dict]:
         """Get information about all tmux panes"""
         panes = []
-        output = self.run_tmux_command(['list-panes', '-a', '-F', 
-                                       '#{session_name}:#{window_index}.#{pane_index}:#{pane_id}:#{pane_title}:#{pane_pid}'])
+        output = self.run_tmux_command([
+            'list-panes',
+            '-a',
+            '-F',
+            '#{session_name}\t#{window_index}\t#{pane_index}\t#{window_name}\t#{pane_id}\t#{pane_title}\t#{pane_pid}',
+        ])
         if output:
             for line in output.split('\n'):
                 if line.strip():
-                    parts = line.split(':')
-                    if len(parts) >= 5:
+                    parts = line.split('\t')
+                    if len(parts) == 7:
                         panes.append({
-                            'session_window_pane': parts[0],
-                            'pane_id': parts[1],
-                            'title': ':'.join(parts[2:-1]),  # Handle colons in title
-                            'pid': parts[-1]
+                            'session_name': parts[0],
+                            'window_index': parts[1],
+                            'pane_index': parts[2],
+                            'window_name': parts[3],
+                            'pane_id': parts[4],
+                            'title': parts[5],
+                            'pid': parts[6],
                         })
         return panes
     
     def get_pane_info(self, pane_id: str) -> Optional[Dict]:
         """Get detailed information about a specific pane"""
-        output = self.run_tmux_command(['display-message', '-p', '-t', pane_id,
-                                       '#{session_name}:#{window_index}.#{pane_index}:#{pane_id}:#{pane_title}:#{pane_pid}'])
+        output = self.run_tmux_command([
+            'display-message',
+            '-p',
+            '-t',
+            pane_id,
+            '#{session_name}\t#{window_index}\t#{pane_index}\t#{window_name}\t#{pane_id}\t#{pane_title}\t#{pane_pid}',
+        ])
         if output:
-            parts = output.split(':')
-            if len(parts) >= 5:
+            parts = output.split('\t')
+            if len(parts) == 7:
                 return {
-                    'session_window_pane': parts[0],
-                    'pane_id': parts[1],
-                    'title': ':'.join(parts[2:-1]),
-                    'pid': parts[-1]
+                    'session_name': parts[0],
+                    'window_index': parts[1],
+                    'pane_index': parts[2],
+                    'window_name': parts[3],
+                    'pane_id': parts[4],
+                    'title': parts[5],
+                    'pid': parts[6],
                 }
         return None
     
@@ -79,6 +95,53 @@ class TmuxIntegration:
     def get_current_session(self) -> Optional[str]:
         """Get the current session name"""
         return self.run_tmux_command(['display-message', '-p', '#{session_name}'])
+
+    def get_all_sessions(self) -> List[str]:
+        """Return all tmux session names."""
+        output = self.run_tmux_command(['list-sessions', '-F', '#{session_name}'])
+        if not output:
+            return []
+        return [line for line in output.split('\n') if line.strip()]
+
+    def load_tracked_panes(self) -> Dict:
+        """Load AI agent panes from the shared tracker file."""
+        if not SHARED_TRACKER.exists():
+            return {}
+        try:
+            with open(SHARED_TRACKER, 'r') as file_handle:
+                data = json.load(file_handle)
+            return data if isinstance(data, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def save_tracked_panes(self, tracked_panes: Dict):
+        """Persist AI agent panes to the shared tracker file."""
+        SHARED_TRACKER.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(SHARED_TRACKER, 'w') as file_handle:
+                json.dump(tracked_panes, file_handle, indent=2)
+        except OSError:
+            pass
+
+    def register_ai_pane(self, pane_id: str, agent: str) -> bool:
+        """Track a pane as an AI agent pane (agent = 'claude' or 'codex')."""
+        pane_info = self.get_pane_info(pane_id)
+        if not pane_info:
+            return False
+        tracked_panes = self.load_tracked_panes()
+        tracked_panes[pane_id] = {
+            'agent': agent,
+            'session_name': pane_info['session_name'],
+        }
+        self.save_tracked_panes(tracked_panes)
+        return True
+
+    def unregister_ai_pane(self, pane_id: str):
+        """Remove a pane from the shared tracker."""
+        tracked_panes = self.load_tracked_panes()
+        if pane_id in tracked_panes:
+            del tracked_panes[pane_id]
+            self.save_tracked_panes(tracked_panes)
     
     def is_pane_active(self, pane_id: str) -> bool:
         """Check if a pane is currently active"""
@@ -107,6 +170,51 @@ class TmuxIntegration:
                     pass
         
         return codex_panes
+
+    def session_has_codex(self, session_name: str) -> bool:
+        """Return True if any pane in the session appears to be running Codex."""
+        current_panes = {pane['pane_id']: pane for pane in self.get_all_panes()}
+        tracked_panes = self.load_tracked_panes()
+
+        for pane_id, tracked_info in tracked_panes.items():
+            pane = current_panes.get(pane_id)
+            if pane and tracked_info.get('session_name') == session_name:
+                return True
+
+        for pane in self.find_codex_panes():
+            if pane.get('session_name') == session_name:
+                return True
+        return False
+
+    def set_session_marker(self, session_name: str, marker: str) -> bool:
+        """Set the picker marker for a tmux session."""
+        try:
+            subprocess.run(
+                ['tmux', 'set-option', '-t', session_name, '@ai_session_marker', marker],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return True
+        except subprocess.CalledProcessError:
+            return False
+
+    def refresh_session_markers(self):
+        """Refresh the 🤖 count marker for every tmux session."""
+        tracked = self.load_tracked_panes()
+        current_pane_ids = {pane['pane_id'] for pane in self.get_all_panes()}
+
+        session_counts: Dict[str, int] = {}
+        for pane_id, info in tracked.items():
+            if pane_id in current_pane_ids:
+                s = info.get('session_name', '')
+                if s:
+                    session_counts[s] = session_counts.get(s, 0) + 1
+
+        for session_name in self.get_all_sessions():
+            count = session_counts.get(session_name, 0)
+            marker = '🤖' * count + (' ' if count > 0 else '')
+            self.set_session_marker(session_name, marker)
     
     def monitor_pane_activity(self, pane_id: str, callback_script: str):
         """Set up monitoring for pane activity"""
@@ -162,6 +270,14 @@ def main():
         codex_panes = tmux.find_codex_panes()
         for pane in codex_panes:
             print(f"{pane['pane_id']}: {pane['title']} (PID: {pane['pid']})")
+
+    elif command == 'session-has-codex':
+        if len(sys.argv) >= 3:
+            session_name = sys.argv[2]
+            print("1" if tmux.session_has_codex(session_name) else "0")
+
+    elif command == 'refresh-session-markers':
+        tmux.refresh_session_markers()
     
     elif command == 'get-title':
         if len(sys.argv) >= 3:

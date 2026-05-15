@@ -8,8 +8,10 @@ import time
 from pathlib import Path
 
 from debug_logger import DebugLogger
+from tmux_integration import TmuxIntegration
 
 STATUS_EMOJIS = {
+    'running': '🏃',
     'stop': '✅',
     'permission': '❓',
 }
@@ -17,6 +19,7 @@ STATUS_EMOJIS = {
 KNOWN_PREFIXES = tuple(f"{emoji} " for emoji in STATUS_EMOJIS.values())
 
 logger = DebugLogger('codex_tmux_hooks')
+tmux_integration = TmuxIntegration()
 
 
 def get_script_dir():
@@ -205,6 +208,7 @@ def get_codex_pane_id(payload):
 
 def set_status_for_pane(pane_id, status):
     logger.log_function_call('set_status_for_pane', args=[pane_id, status])
+    tmux_integration.register_ai_pane(pane_id, 'codex')
 
     current_name = get_pane_name(pane_id)
     if not current_name:
@@ -220,11 +224,13 @@ def set_status_for_pane(pane_id, status):
         return False
 
     save_pane_state(pane_id, original_name, status, auto_rename_was_on)
+    tmux_integration.refresh_session_markers()
     return True
 
 
 def restore_pane_name(pane_id):
     logger.log_function_call('restore_pane_name', args=[pane_id])
+    tmux_integration.register_ai_pane(pane_id, 'codex')
     state = load_pane_state(pane_id)
     if not state:
         logger.warning(f"No state found for pane {pane_id} to restore")
@@ -244,6 +250,7 @@ def restore_pane_name(pane_id):
 
     set_window_auto_rename(pane_id, auto_rename_was_on)
     cleanup_pane_state(pane_id)
+    tmux_integration.refresh_session_markers()
     logger.info(f"Restored pane {pane_id} window name to: {original_name}")
     return True
 
@@ -276,6 +283,8 @@ def infer_action_from_payload(payload):
         lowered = candidate.lower()
         if lowered == 'stop':
             return 'stop'
+        if lowered in ('userpromptsubmit', 'user-prompt-submit'):
+            return 'user-prompt-submit'
         if lowered in ('permissionrequest', 'permission-request'):
             return 'permission-request'
 
@@ -287,10 +296,16 @@ def main():
     action = sys.argv[1] if len(sys.argv) >= 2 else infer_action_from_payload(payload)
 
     if not action:
-        print("Usage: codex_tmux_hooks.py [stop|permission-request|restore|clear_emoji_on_enter] [pane_id]")
+        print("Usage: codex_tmux_hooks.py [user-prompt-submit|stop|permission-request|restore|clear_emoji_on_enter] [pane_id]")
         sys.exit(1)
 
     logger.info(f"Starting codex_tmux_hooks with action: {action}")
+
+    if action in ('user-prompt-submit', 'userpromptsubmit'):
+        pane_id = get_codex_pane_id(payload)
+        success = pane_id is not None and set_status_for_pane(pane_id, 'running')
+        logger.log_hook_execution('USER_PROMPT_SUBMIT', pane_id, success=success)
+        sys.exit(0 if success else 1)
 
     if action == 'stop':
         pane_id = get_codex_pane_id(payload)

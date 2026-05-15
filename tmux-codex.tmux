@@ -11,6 +11,7 @@ chmod +x "$CURRENT_DIR/scripts/tmux_integration.py"
 chmod +x "$CURRENT_DIR/scripts/pane_tracker.py"
 chmod +x "$CURRENT_DIR/scripts/notification_handler.py"
 chmod +x "$CURRENT_DIR/scripts/debug_logger.py"
+chmod +x "$CURRENT_DIR/scripts/open_session_picker.sh"
 
 # Set up tmux hooks for monitoring pane activity and input
 tmux set-hook -g after-select-pane "run-shell '$CURRENT_DIR/scripts/pane_tracker.py monitor #{pane_id}'"
@@ -22,6 +23,11 @@ tmux set-hook -g after-select-window "run-shell '$CURRENT_DIR/scripts/codex_tmux
 
 # Bind Enter key to clear emoji prefix when pressed
 tmux bind-key -n Enter run-shell "tmux send-keys Enter; '$CURRENT_DIR/scripts/codex_tmux_hooks.py' clear_emoji_on_enter"
+
+# Override the native session picker so sessions with a Codex pane are marked.
+tmux run-shell "$CURRENT_DIR/scripts/tmux_integration.py refresh-session-markers"
+tmux unbind-key -T prefix S
+tmux bind-key -T prefix S run-shell "$CURRENT_DIR/scripts/open_session_picker.sh"
 
 # Display installation message
 tmux display-message "Codex Tmux Plugin loaded. Configure hooks in ~/.codex/config.toml"

@@ -139,7 +139,8 @@ class PaneTracker:
     def handle_pane_exit(self, pane_id):
         """Handle when a pane exits"""
         self.remove_tracked_pane(pane_id)
-        
+        self.tmux.unregister_ai_pane(pane_id)
+
         # Clean up state file
         try:
             state_file = self.script_dir / f".pane_state_{pane_id.replace('%', '')}.json"
@@ -147,6 +148,8 @@ class PaneTracker:
                 state_file.unlink()
         except Exception:
             pass
+
+        self.tmux.refresh_session_markers()
     
     def get_tracked_panes_status(self):
         """Get status of all tracked panes"""
