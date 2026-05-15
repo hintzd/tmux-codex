@@ -199,10 +199,48 @@ class TmuxIntegration:
         except subprocess.CalledProcessError:
             return False
 
+    def _detect_ai_agent(self, pid: str) -> Optional[str]:
+        """Return 'claude' or 'codex' if the pane's process tree contains one, else None."""
+        try:
+            for check_pid in [pid] + subprocess.run(
+                ['pgrep', '-P', pid], capture_output=True, text=True
+            ).stdout.strip().split('\n'):
+                check_pid = check_pid.strip()
+                if not check_pid:
+                    continue
+                result = subprocess.run(
+                    ['ps', '-p', check_pid, '-o', 'command='],
+                    capture_output=True, text=True, check=False, timeout=2,
+                )
+                cmd = result.stdout.lower()
+                if 'claude' in cmd:
+                    return 'claude'
+                if 'codex' in cmd:
+                    return 'codex'
+        except Exception:
+            pass
+        return None
+
     def refresh_session_markers(self):
         """Refresh the 🤖 count marker for every tmux session."""
         tracked = self.load_tracked_panes()
-        current_pane_ids = {pane['pane_id'] for pane in self.get_all_panes()}
+        all_panes = self.get_all_panes()
+        current_pane_ids = {pane['pane_id'] for pane in all_panes}
+        tracker_updated = False
+
+        # Auto-detect unregistered AI panes by process inspection
+        for pane in all_panes:
+            if pane['pane_id'] not in tracked:
+                agent = self._detect_ai_agent(pane['pid'])
+                if agent:
+                    tracked[pane['pane_id']] = {
+                        'agent': agent,
+                        'session_name': pane['session_name'],
+                    }
+                    tracker_updated = True
+
+        if tracker_updated:
+            self.save_tracked_panes(tracked)
 
         session_counts: Dict[str, int] = {}
         for pane_id, info in tracked.items():
